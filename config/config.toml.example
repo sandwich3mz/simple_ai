@@ -1,0 +1,35 @@
+[mainConfig]
+appName =
+host =
+port =
+
+[emailConfig]
+authcode =
+email =
+
+[redisConfig]
+host =
+port =
+password =
+db =
+
+[mysqlConfig]
+host =
+port =
+user =
+password =
+databaseName =
+charset =
+
+[jwtConfig]
+expire_duration= 8760
+issuer=
+subject=
+key=
+
+[rabbitmqConfig]
+host=
+port=
+username=
+password=
+vhost=
