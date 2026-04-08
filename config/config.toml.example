@@ -33,3 +33,13 @@ port=
 username=
 password=
 vhost=
+
+[aiConfig]
+qwenApiKey =
+qwenModel =
+qwenBaseURL =
+deepseekApiKey =
+deepseekModel =
+deepseekBaseURL =
+timeoutSeconds = 0
+maxTokens = 0

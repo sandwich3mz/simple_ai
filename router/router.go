@@ -1,6 +1,8 @@
 package router
 
 import (
+	"simple_ai/middleware/jwt"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -11,6 +13,11 @@ func InitRouter() *gin.Engine {
 	{
 		RegisterUserRouter(enterRouter.Group("/user"))
 	}
-
+	//后续登录的接口需要jwt鉴权
+	{
+		AIGroup := enterRouter.Group("/AI")
+		AIGroup.Use(jwt.Auth())
+		AIRouter(AIGroup)
+	}
 	return r
 }

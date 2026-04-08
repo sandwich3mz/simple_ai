@@ -21,6 +21,10 @@ const (
 	CodeForbidden Code = 3001
 
 	CodeServerBusy Code = 4001
+
+	AIModelNotFind    Code = 5001
+	AIModelCannotOpen Code = 5002
+	AIModelFail       Code = 5003
 )
 
 var msg = map[Code]string{
@@ -40,6 +44,10 @@ var msg = map[Code]string{
 	CodeForbidden: "权限不足",
 
 	CodeServerBusy: "服务繁忙",
+
+	AIModelNotFind:    "模型不存在",
+	AIModelCannotOpen: "无法打开模型",
+	AIModelFail:       "模型运行失败",
 }
 
 func (code Code) Code() int64 {

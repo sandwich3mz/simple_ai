@@ -48,6 +48,17 @@ type Rabbitmq struct {
 	RabbitmqVhost    string `toml:"vhost"`
 }
 
+type AIConfig struct {
+	QwenAPIKey      string `toml:"qwenApiKey"`
+	QwenModel       string `toml:"qwenModel"`
+	QwenBaseURL     string `toml:"qwenBaseURL"`
+	DeepseekAPIKey  string `toml:"deepseekApiKey"`
+	DeepseekModel   string `toml:"deepseekModel"`
+	DeepseekBaseURL string `toml:"deepseekBaseURL"`
+	TimeoutSeconds  int    `toml:"timeoutSeconds"`
+	MaxTokens       int    `toml:"maxTokens"`
+}
+
 type Config struct {
 	EmailConfig `toml:"emailConfig"`
 	RedisConfig `toml:"redisConfig"`
@@ -55,6 +66,7 @@ type Config struct {
 	JwtConfig   `toml:"jwtConfig"`
 	MainConfig  `toml:"mainConfig"`
 	Rabbitmq    `toml:"rabbitmqConfig"`
+	AIConfig    `toml:"aiConfig"`
 }
 
 type RedisKeyConfig struct {
