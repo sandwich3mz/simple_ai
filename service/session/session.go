@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"simple_ai/common/aihelper"
 	"simple_ai/common/code"
+	myredis "simple_ai/common/redis"
 	appconfig "simple_ai/config"
 	"simple_ai/dao/session"
 	"simple_ai/model"
@@ -17,7 +18,7 @@ import (
 var ctx = context.Background()
 
 func buildAIConfig(modelType string) map[string]interface{} {
-	conf := appconfig.GetConfig().AIConfig
+	conf := getAIConfig()
 	helperConfig := map[string]interface{}{}
 
 	normalizedModelType := strings.ToLower(strings.TrimSpace(modelType))
@@ -48,6 +49,16 @@ func buildAIConfig(modelType string) map[string]interface{} {
 	}
 
 	return helperConfig
+}
+
+func getAIConfig() appconfig.AIConfig {
+	localCfg := appconfig.GetConfig().AIConfig
+	cfg, err := myredis.EnsureAIConfig(localCfg)
+	if err != nil {
+		log.Printf("get ai config from redis failed, fallback to local config: %v", err)
+		return localCfg
+	}
+	return cfg
 }
 
 func GetUserSessionsByUserName(userName string) ([]model.SessionInfo, error) {

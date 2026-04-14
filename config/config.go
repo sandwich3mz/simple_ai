@@ -71,10 +71,12 @@ type Config struct {
 
 type RedisKeyConfig struct {
 	CaptchaPrefix string
+	AIConfigKey   string
 }
 
 var DefaultRedisKeyConfig = RedisKeyConfig{
 	CaptchaPrefix: "captcha:%s",
+	AIConfigKey:   "ai:config",
 }
 
 var config *Config
