@@ -20,7 +20,7 @@ func SendCaptcha(email, code, msg string) error {
 	// 收件人
 	m.SetHeader("To", email)
 	// 主题
-	m.SetHeader("Subject", "来自GopherAI的信息")
+	m.SetHeader("Subject", "来自SimpleAI的信息")
 	// 正文内容（纯文本形式，也可以用 text/html）
 	m.SetBody("text/plain", msg+" "+code)
 

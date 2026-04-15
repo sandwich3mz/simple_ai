@@ -1,0 +1,56 @@
+name: Deploy to Tencent Cloud
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      APP_DIR: ${{ vars.APP_DIR }}
+      BRANCH: ${{ vars.DEPLOY_BRANCH }}
+      DEPLOY_NETWORK: ${{ vars.DEPLOY_NETWORK }}
+      BACKEND_DOCKERFILE: ${{ vars.BACKEND_DOCKERFILE }}
+      BACKEND_CONTEXT_DIR: ${{ vars.BACKEND_CONTEXT_DIR }}
+      BACKEND_IMAGE_NAME: ${{ vars.BACKEND_IMAGE_NAME }}
+      BACKEND_CONTAINER_NAME: ${{ vars.BACKEND_CONTAINER_NAME }}
+      BACKEND_HOST_PORT: ${{ vars.BACKEND_HOST_PORT }}
+      BACKEND_CONTAINER_PORT: ${{ vars.BACKEND_CONTAINER_PORT }}
+      BACKEND_CONFIG_FILE: ${{ vars.BACKEND_CONFIG_FILE }}
+      BACKEND_HEALTHCHECK_URL: ${{ vars.BACKEND_HEALTHCHECK_URL }}
+      FRONTEND_DOCKERFILE: ${{ vars.FRONTEND_DOCKERFILE }}
+      FRONTEND_CONTEXT_DIR: ${{ vars.FRONTEND_CONTEXT_DIR }}
+      FRONTEND_IMAGE_NAME: ${{ vars.FRONTEND_IMAGE_NAME }}
+      FRONTEND_CONTAINER_NAME: ${{ vars.FRONTEND_CONTAINER_NAME }}
+      FRONTEND_HOST_PORT: ${{ vars.FRONTEND_HOST_PORT }}
+      FRONTEND_CONTAINER_PORT: ${{ vars.FRONTEND_CONTAINER_PORT }}
+      FRONTEND_API_UPSTREAM: ${{ vars.FRONTEND_API_UPSTREAM }}
+      FRONTEND_HEALTHCHECK_URL: ${{ vars.FRONTEND_HEALTHCHECK_URL }}
+      STARTUP_WAIT_SECONDS: ${{ vars.STARTUP_WAIT_SECONDS }}
+    steps:
+      - name: Deploy on server by SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          port: ${{ secrets.SERVER_PORT }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script_stop: true
+          envs: APP_DIR,BRANCH,DEPLOY_NETWORK,BACKEND_DOCKERFILE,BACKEND_CONTEXT_DIR,BACKEND_IMAGE_NAME,BACKEND_CONTAINER_NAME,BACKEND_HOST_PORT,BACKEND_CONTAINER_PORT,BACKEND_CONFIG_FILE,BACKEND_HEALTHCHECK_URL,FRONTEND_DOCKERFILE,FRONTEND_CONTEXT_DIR,FRONTEND_IMAGE_NAME,FRONTEND_CONTAINER_NAME,FRONTEND_HOST_PORT,FRONTEND_CONTAINER_PORT,FRONTEND_API_UPSTREAM,FRONTEND_HEALTHCHECK_URL,STARTUP_WAIT_SECONDS
+          script: |
+            set -e
+            APP_DIR="${APP_DIR:-/srv/simple_ai}"
+            BRANCH="${BRANCH:-main}"
+            cd "$APP_DIR"
+            git fetch origin "$BRANCH"
+            git checkout "$BRANCH"
+            git pull --ff-only origin "$BRANCH"
+            chmod +x ./scripts/deploy.sh
+            ./scripts/deploy.sh

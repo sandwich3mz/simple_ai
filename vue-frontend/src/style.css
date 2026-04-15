@@ -230,6 +230,22 @@ body {
   min-height: calc(100vh - 56px);
 }
 
+.chat-panel > .chat-toolbar {
+  grid-row: 1;
+}
+
+.chat-panel > .alert {
+  grid-row: 2;
+}
+
+.chat-panel > .message-list {
+  grid-row: 3;
+}
+
+.chat-panel > .composer {
+  grid-row: 4;
+}
+
 .chat-toolbar {
   display: flex;
   justify-content: space-between;
@@ -291,6 +307,7 @@ body {
   padding-right: 4px;
   display: grid;
   gap: 10px;
+  min-height: 0;
 }
 
 .empty-message {
@@ -340,12 +357,19 @@ body {
   gap: 10px;
   border-top: 1px solid var(--line);
   padding-top: 12px;
+  align-items: start;
 }
 
 .composer textarea {
   resize: none;
   min-height: 74px;
   max-height: 160px;
+}
+
+.composer .action-btn {
+  align-self: start;
+  min-height: 44px;
+  white-space: nowrap;
 }
 
 @keyframes bubbleIn {

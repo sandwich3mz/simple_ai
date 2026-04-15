@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { login, register, sendCaptcha } from './api/auth'
 import {
   getHistory,
@@ -13,6 +13,7 @@ import { normalizeError, setAuthToken } from './api/client'
 
 const TOKEN_KEY = 'simple_ai_token'
 const MODEL_KEY = 'simple_ai_model'
+const CAPTCHA_COOLDOWN_SECONDS = 60
 
 const token = ref(localStorage.getItem(TOKEN_KEY) || '')
 const modelType = ref(localStorage.getItem(MODEL_KEY) || 'qwen')
@@ -35,6 +36,8 @@ const loadingHistory = ref(false)
 const sending = ref(false)
 const authLoading = ref(false)
 const captchaLoading = ref(false)
+const captchaCooldown = ref(0)
+let captchaCooldownTimer = null
 
 const alertText = ref('')
 const alertType = ref('info')
@@ -43,6 +46,18 @@ const messageContainer = ref(null)
 setAuthToken(token.value)
 
 const canSend = computed(() => token.value && inputText.value.trim() && !sending.value)
+const canSendCaptcha = computed(
+  () => registerEmail.value.trim() && !captchaLoading.value && captchaCooldown.value === 0,
+)
+const captchaButtonText = computed(() => {
+  if (captchaLoading.value) {
+    return '发送中'
+  }
+  if (captchaCooldown.value > 0) {
+    return `${captchaCooldown.value}s后重发`
+  }
+  return '发验证码'
+})
 const currentSessionTitle = computed(() => {
   const match = sessions.value.find((item) => item.sessionId === currentSessionId.value)
   return match?.name || '新会话'
@@ -64,6 +79,27 @@ function showAlert(message, type = 'error') {
 
 function clearAlert() {
   alertText.value = ''
+}
+
+function clearCaptchaCooldownTimer() {
+  if (!captchaCooldownTimer) {
+    return
+  }
+  clearInterval(captchaCooldownTimer)
+  captchaCooldownTimer = null
+}
+
+function startCaptchaCooldown(seconds = CAPTCHA_COOLDOWN_SECONDS) {
+  clearCaptchaCooldownTimer()
+  captchaCooldown.value = seconds
+  captchaCooldownTimer = setInterval(() => {
+    if (captchaCooldown.value <= 1) {
+      captchaCooldown.value = 0
+      clearCaptchaCooldownTimer()
+      return
+    }
+    captchaCooldown.value -= 1
+  }, 1000)
 }
 
 function setToken(newToken) {
@@ -159,12 +195,23 @@ async function selectSession(sessionId) {
   await loadHistory(sessionId)
 }
 
+function onCreateSession() {
+  if (!token.value) {
+    return
+  }
+  currentSessionId.value = ''
+  messages.value = []
+  clearAlert()
+}
+
 function resetAuthForms() {
   loginUsername.value = ''
   loginPassword.value = ''
   registerEmail.value = ''
   registerCaptcha.value = ''
   registerPassword.value = ''
+  captchaCooldown.value = 0
+  clearCaptchaCooldownTimer()
 }
 
 async function onLogin() {
@@ -210,10 +257,19 @@ async function onRegister() {
 }
 
 async function onSendCaptcha() {
+  const email = registerEmail.value.trim()
+  if (!email) {
+    showAlert('请先输入邮箱')
+    return
+  }
+  if (captchaLoading.value || captchaCooldown.value > 0) {
+    return
+  }
   clearAlert()
   captchaLoading.value = true
   try {
-    await sendCaptcha(registerEmail.value.trim())
+    await sendCaptcha(email)
+    startCaptchaCooldown()
     showAlert('验证码已发送，请检查邮箱', 'success')
   } catch (error) {
     showAlert(normalizeError(error))
@@ -317,6 +373,10 @@ onMounted(async () => {
     await loadHistory(currentSessionId.value)
   }
 })
+
+onUnmounted(() => {
+  clearCaptchaCooldownTimer()
+})
 </script>
 
 <template>
@@ -362,8 +422,8 @@ onMounted(async () => {
           <label>验证码</label>
           <div class="inline">
             <input v-model="registerCaptcha" placeholder="输入验证码" />
-            <button class="ghost-btn" :disabled="captchaLoading" @click="onSendCaptcha">
-              {{ captchaLoading ? '发送中' : '发验证码' }}
+            <button class="ghost-btn" :disabled="!canSendCaptcha" @click="onSendCaptcha">
+              {{ captchaButtonText }}
             </button>
           </div>
           <label>密码</label>
@@ -377,9 +437,12 @@ onMounted(async () => {
       <div v-else class="panel session-panel">
         <div class="panel-head">
           <strong>会话列表</strong>
-          <button class="ghost-btn" :disabled="loadingSessions" @click="refreshSessions()">
-            刷新
-          </button>
+          <div class="inline">
+            <button class="ghost-btn" @click="onCreateSession">新建会话</button>
+            <button class="ghost-btn" :disabled="loadingSessions" @click="refreshSessions()">
+              刷新
+            </button>
+          </div>
         </div>
 
         <div class="session-list">
