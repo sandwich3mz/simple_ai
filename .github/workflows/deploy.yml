@@ -35,6 +35,27 @@ jobs:
       FRONTEND_HEALTHCHECK_URL: ${{ vars.FRONTEND_HEALTHCHECK_URL }}
       STARTUP_WAIT_SECONDS: ${{ vars.STARTUP_WAIT_SECONDS }}
     steps:
+      - name: Validate required secrets
+        shell: bash
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          SERVER_PORT: ${{ secrets.SERVER_PORT }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          set -e
+          missing=0
+          for key in SERVER_HOST SERVER_USER SERVER_PORT SSH_PRIVATE_KEY; do
+            if [ -z "${!key}" ]; then
+              echo "::error::Missing required secret: $key"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "::error::Please add the 4 secrets in Repository secrets, or put them in an Environment and set jobs.deploy.environment."
+            exit 1
+          fi
+
       - name: Deploy on server by SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
