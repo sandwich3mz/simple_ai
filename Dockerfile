@@ -1,6 +1,8 @@
 FROM golang:1.25 AS builder
 
 WORKDIR /src
+ENV GOPROXY=https://goproxy.cn,direct
+ENV GOSUMDB=sum.golang.google.cn
 
 COPY go.mod go.sum ./
 RUN go mod download
