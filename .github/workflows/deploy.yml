@@ -72,7 +72,9 @@ jobs:
             APP_DIR="${APP_DIR:-/srv/simple_ai}"
             BRANCH="${BRANCH:-main}"
             cd "$APP_DIR"
+            git config core.fileMode false
             git fetch origin "$BRANCH"
             git checkout "$BRANCH"
+            git restore --staged --worktree --source=HEAD -- scripts/deploy.sh || true
             git pull --ff-only origin "$BRANCH"
             bash ./scripts/deploy.sh
