@@ -86,7 +86,8 @@ ssh -T git@github.com
 
 - `APP_DIR`：`/srv/simple_ai`
 - `DEPLOY_BRANCH`：`main`
-- `DEPLOY_NETWORK`：`simple_ai_net`
+- `DEPLOY_NETWORK`：`ai-net`
+- `AUTO_CREATE_NETWORK`：`false`（推荐；仅当你希望自动创建网络时设为 `true`）
 - `STARTUP_WAIT_SECONDS`：`8`（两个新容器启动后等待秒数）
 
 后端相关：

@@ -3,7 +3,8 @@ set -Eeuo pipefail
 
 APP_DIR="${APP_DIR:-/srv/simple_ai}"
 STARTUP_WAIT_SECONDS="${STARTUP_WAIT_SECONDS:-8}"
-DEPLOY_NETWORK="${DEPLOY_NETWORK:-simple_ai_net}"
+DEPLOY_NETWORK="${DEPLOY_NETWORK:-ai-net}"
+AUTO_CREATE_NETWORK="${AUTO_CREATE_NETWORK:-false}"
 NEW_TAG="${NEW_TAG:-$(date +%Y%m%d%H%M%S)}"
 
 # Backend settings
@@ -37,9 +38,20 @@ container_exists() {
 }
 
 ensure_network() {
-  if ! docker network inspect "$DEPLOY_NETWORK" >/dev/null 2>&1; then
-    docker network create "$DEPLOY_NETWORK" >/dev/null
+  if docker network inspect "$DEPLOY_NETWORK" >/dev/null 2>&1; then
+    echo "[deploy] using docker network: $DEPLOY_NETWORK"
+    return 0
   fi
+
+  if [ "$AUTO_CREATE_NETWORK" = "true" ]; then
+    echo "[deploy] docker network not found, creating: $DEPLOY_NETWORK"
+    docker network create "$DEPLOY_NETWORK" >/dev/null
+    return 0
+  fi
+
+  echo "[deploy] docker network not found: $DEPLOY_NETWORK"
+  echo "[deploy] create it first or set AUTO_CREATE_NETWORK=true"
+  exit 1
 }
 
 backup_container() {
