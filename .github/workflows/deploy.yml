@@ -75,5 +75,4 @@ jobs:
             git fetch origin "$BRANCH"
             git checkout "$BRANCH"
             git pull --ff-only origin "$BRANCH"
-            chmod +x ./scripts/deploy.sh
-            ./scripts/deploy.sh
+            bash ./scripts/deploy.sh
