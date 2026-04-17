@@ -305,7 +305,8 @@ body {
 .message-list {
   overflow: auto;
   padding-right: 4px;
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 10px;
   min-height: 0;
 }
@@ -319,6 +320,7 @@ body {
 
 .message-row {
   display: flex;
+  align-items: flex-start;
   opacity: 0;
   animation: bubbleIn 0.25s ease forwards;
 }

@@ -5,13 +5,16 @@ import (
 	"simple_ai/common/code"
 	"simple_ai/controller"
 	"simple_ai/service/user"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
 
 type (
 	LoginRequest struct {
+		Account  string `json:"account"`
 		Username string `json:"username"`
+		Email    string `json:"email"`
 		Password string `json:"password"`
 	}
 	LoginResponse struct {
@@ -48,7 +51,19 @@ func Login(c *gin.Context) {
 		return
 	}
 
-	token, code_ := user.Login(req.Username, req.Password)
+	account := strings.TrimSpace(req.Account)
+	if account == "" {
+		account = strings.TrimSpace(req.Username)
+	}
+	if account == "" {
+		account = strings.TrimSpace(req.Email)
+	}
+	if account == "" || strings.TrimSpace(req.Password) == "" {
+		c.JSON(http.StatusOK, res.CodeOf(code.CodeInvalidParams))
+		return
+	}
+
+	token, code_ := user.Login(account, req.Password)
 	if code_ != code.CodeSuccess {
 		c.JSON(http.StatusOK, res.CodeOf(code_))
 		return

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"simple_ai/common/mysql"
 	"simple_ai/model"
+	"strings"
 	"simple_ai/utils"
 
 	"gorm.io/gorm"
@@ -17,9 +18,14 @@ const (
 
 var ctx = context.Background()
 
-func IsExistUser(username string) (bool, *model.User) {
+func IsExistUser(account string) (bool, *model.User) {
+	account = strings.TrimSpace(account)
+	if account == "" {
+		return false, nil
+	}
 
-	user, err := mysql.GetUserByUsername(username)
+	user := new(model.User)
+	err := mysql.DB.Where("username = ? OR email = ?", account, account).First(user).Error
 
 	if errors.Is(err, gorm.ErrRecordNotFound) || user == nil {
 		return false, nil
