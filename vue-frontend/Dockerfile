@@ -4,13 +4,14 @@ FROM node:24-alpine AS builder
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm config set registry https://registry.npmmirror.com \
+RUN npm config set registry https://mirrors.cloud.tencent.com/npm/ \
  && npm config set fetch-retries 5 \
  && npm config set fetch-retry-mintimeout 20000 \
  && npm config set fetch-retry-maxtimeout 120000 \
- && npm config set fetch-timeout 300000
-RUN --mount=type=cache,target=/root/.npm \
-  npm ci --cache /root/.npm --prefer-offline --no-audit --no-fund
+ && npm config set fetch-timeout 300000 \
+ && npm config set progress false
+RUN --mount=type=cache,id=simple_ai_npm_cache,target=/root/.npm \
+  npm ci --cache /root/.npm --prefer-offline --no-audit --no-fund --progress=false
 
 COPY . .
 RUN npm run build
