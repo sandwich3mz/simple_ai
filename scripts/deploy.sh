@@ -6,6 +6,8 @@ STARTUP_WAIT_SECONDS="${STARTUP_WAIT_SECONDS:-8}"
 DEPLOY_NETWORK="${DEPLOY_NETWORK:-ai-net}"
 AUTO_CREATE_NETWORK="${AUTO_CREATE_NETWORK:-false}"
 NEW_TAG="${NEW_TAG:-$(date +%Y%m%d%H%M%S)}"
+DOCKER_BUILDKIT="${DOCKER_BUILDKIT:-1}"
+DOCKER_BUILD_PULL="${DOCKER_BUILD_PULL:-false}"
 
 # Backend settings
 BACKEND_DOCKERFILE="${BACKEND_DOCKERFILE:-$APP_DIR/Dockerfile}"
@@ -133,6 +135,12 @@ trap 'on_err $LINENO' ERR
 
 echo "[deploy] app dir: $APP_DIR"
 cd "$APP_DIR"
+export DOCKER_BUILDKIT
+
+BUILD_PULL_FLAG=""
+if [ "$DOCKER_BUILD_PULL" = "true" ]; then
+  BUILD_PULL_FLAG="--pull"
+fi
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "[deploy] docker is not installed"
@@ -148,14 +156,14 @@ fi
 ensure_network
 
 echo "[deploy] build backend image: $BACKEND_IMAGE_NAME:$NEW_TAG"
-docker build --pull \
+docker build ${BUILD_PULL_FLAG} \
   -f "$BACKEND_DOCKERFILE" \
   -t "$BACKEND_IMAGE_NAME:$NEW_TAG" \
   -t "$BACKEND_IMAGE_NAME:latest" \
   "$BACKEND_CONTEXT_DIR"
 
 echo "[deploy] build frontend image: $FRONTEND_IMAGE_NAME:$NEW_TAG"
-docker build --pull \
+docker build ${BUILD_PULL_FLAG} \
   -f "$FRONTEND_DOCKERFILE" \
   -t "$FRONTEND_IMAGE_NAME:$NEW_TAG" \
   -t "$FRONTEND_IMAGE_NAME:latest" \
