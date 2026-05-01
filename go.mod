@@ -5,10 +5,13 @@ go 1.25.0
 require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/cloudwego/eino v0.8.6
+	github.com/cloudwego/eino-ext/components/model/deepseek v0.1.2
+	github.com/cloudwego/eino-ext/components/model/qwen v0.1.7
 	github.com/gin-gonic/gin v1.12.0
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/google/uuid v1.6.0
+	github.com/redis/go-redis/v9 v9.19.0
 	github.com/streadway/amqp v1.1.0
 	gopkg.in/gomail.v2 v2.0.0-20160411212932-81ebce5c23df
 	gorm.io/driver/mysql v1.6.0
@@ -22,11 +25,8 @@ require (
 	github.com/bytedance/gopkg v0.1.3 // indirect
 	github.com/bytedance/sonic v1.15.0 // indirect
 	github.com/bytedance/sonic/loader v0.5.0 // indirect
-	github.com/cespare/xxhash/v2 v2.1.2 // indirect
+	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cloudwego/base64x v0.1.6 // indirect
-	github.com/cloudwego/eino-ext v0.0.0-20260331071634-4f359694d2d9 // indirect
-	github.com/cloudwego/eino-ext/components/model/deepseek v0.1.2 // indirect
-	github.com/cloudwego/eino-ext/components/model/qwen v0.1.7 // indirect
 	github.com/cloudwego/eino-ext/libs/acl/openai v0.1.15 // indirect
 	github.com/cohesion-org/deepseek-go v1.3.2 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
@@ -66,6 +66,7 @@ require (
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/yargevad/filepathx v1.0.0 // indirect
 	go.mongodb.org/mongo-driver/v2 v2.5.0 // indirect
+	go.uber.org/atomic v1.11.0 // indirect
 	golang.org/x/arch v0.22.0 // indirect
 	golang.org/x/crypto v0.48.0 // indirect
 	golang.org/x/exp v0.0.0-20250218142911-aa4b98e5adaa // indirect

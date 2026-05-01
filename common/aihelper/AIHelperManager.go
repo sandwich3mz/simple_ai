@@ -59,7 +59,7 @@ func (m *Manager) GetOrCreateAIHelper(userName, sessionID, modelType string, con
 		return nil, err
 	}
 
-	helper := NewAIHelper(aiModel)
+	helper := NewAIHelper(aiModel, sessionID)
 	helper.SessionID = sessionID
 	userHelpers[sessionID] = helper
 

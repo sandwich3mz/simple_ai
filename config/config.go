@@ -59,24 +59,43 @@ type AIConfig struct {
 	MaxTokens       int    `toml:"maxTokens"`
 }
 
-type Config struct {
-	EmailConfig `toml:"emailConfig"`
-	RedisConfig `toml:"redisConfig"`
-	MysqlConfig `toml:"mysqlConfig"`
-	JwtConfig   `toml:"jwtConfig"`
-	MainConfig  `toml:"mainConfig"`
-	Rabbitmq    `toml:"rabbitmqConfig"`
-	AIConfig    `toml:"aiConfig"`
+type RagModelConfig struct {
+	RagEmbeddingModel string `toml:"embeddingModel"`
+	RagChatModelName  string `toml:"chatModelName"`
+	RagDocDir         string `toml:"docDir"`
+	RagBaseUrl        string `toml:"baseUrl"`
+	RagDimension      int    `toml:"dimension"`
 }
 
-type RedisKeyConfig struct {
-	CaptchaPrefix string
-	AIConfigKey   string
+type VoiceServiceConfig struct {
+	VoiceServiceApiKey    string `toml:"voiceServiceApiKey"`
+	VoiceServiceSecretKey string `toml:"voiceServiceSecretKey"`
 }
 
 var DefaultRedisKeyConfig = RedisKeyConfig{
-	CaptchaPrefix: "captcha:%s",
-	AIConfigKey:   "ai:config",
+	CaptchaPrefix:   "captcha:%s",
+	AIConfigKey:     "ai:config",
+	IndexName:       "rag_docs:%s:idx",
+	IndexNamePrefix: "rag_docs:%s:",
+}
+
+type Config struct {
+	EmailConfig        `toml:"emailConfig"`
+	RedisConfig        `toml:"redisConfig"`
+	MysqlConfig        `toml:"mysqlConfig"`
+	JwtConfig          `toml:"jwtConfig"`
+	MainConfig         `toml:"mainConfig"`
+	Rabbitmq           `toml:"rabbitmqConfig"`
+	AIConfig           `toml:"aiConfig"`
+	RagModelConfig     `toml:"ragModelConfig"`
+	VoiceServiceConfig `toml:"voiceServiceConfig"`
+}
+
+type RedisKeyConfig struct {
+	CaptchaPrefix   string
+	AIConfigKey     string
+	IndexName       string
+	IndexNamePrefix string
 }
 
 var config *Config

@@ -2,6 +2,7 @@ package aihelper
 
 import (
 	"context"
+	"simple_ai/common/rabbitmq"
 	"simple_ai/model"
 	"simple_ai/utils"
 	"sync"
@@ -17,10 +18,17 @@ type AIHelper struct {
 	saveFunc  func(*model.Message) (*model.Message, error)
 }
 
-func NewAIHelper(aiModel AIModel) *AIHelper {
+func NewAIHelper(aiModel AIModel, SessionID string) *AIHelper {
 	return &AIHelper{
 		aiModel:  aiModel,
 		messages: make([]*model.Message, 0),
+		//异步推送到消息队列中
+		saveFunc: func(msg *model.Message) (*model.Message, error) {
+			data := rabbitmq.GenerateMessageMQParam(msg.SessionID, msg.Content, msg.UserName, msg.IsUser)
+			err := rabbitmq.RMQMessage.Publish(data)
+			return msg, err
+		},
+		SessionID: SessionID,
 	}
 }
 
