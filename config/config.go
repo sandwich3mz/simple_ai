@@ -60,6 +60,7 @@ type AIConfig struct {
 }
 
 type RagModelConfig struct {
+	RagAPIKey         string `toml:"apiKey"`
 	RagEmbeddingModel string `toml:"embeddingModel"`
 	RagChatModelName  string `toml:"chatModelName"`
 	RagDocDir         string `toml:"docDir"`

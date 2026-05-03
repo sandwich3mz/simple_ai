@@ -64,10 +64,16 @@ backup_container() {
 
   if container_exists "$current"; then
     echo "[deploy] backup container: $current -> $backup_name"
-    docker rename "$current" "$backup_name"
-    docker stop "$backup_name" >/dev/null 2>&1 || true
-    printf -v "$old_ref_var" '%s' "$backup_name"
-    printf -v "$flag_var" '%s' "1"
+    if docker rename "$current" "$backup_name"; then
+      docker stop "$backup_name" >/dev/null 2>&1 || true
+      printf -v "$old_ref_var" '%s' "$backup_name"
+      printf -v "$flag_var" '%s' "1"
+    else
+      echo "[deploy] failed to rename $current; removing stale container and continuing without rollback backup"
+      docker rm -f "$current" >/dev/null
+      printf -v "$old_ref_var" '%s' ""
+      printf -v "$flag_var" '%s' "0"
+    fi
   fi
 }
 

@@ -19,5 +19,11 @@ func InitRouter() *gin.Engine {
 		AIGroup.Use(jwt.Auth())
 		AIRouter(AIGroup)
 	}
+
+	{
+		FileGroup := enterRouter.Group("/file")
+		FileGroup.Use(jwt.Auth())
+		FileRouter(FileGroup)
+	}
 	return r
 }

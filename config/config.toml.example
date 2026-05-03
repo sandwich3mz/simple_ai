@@ -1,45 +1,57 @@
 [mainConfig]
-appName =
-host =
-port =
+appName = ""
+host = ""
+port = 0
 
 [emailConfig]
-authcode =
-email =
+authcode = ""
+email = ""
 
 [redisConfig]
-host =
-port =
-password =
-db =
+host = ""
+port = 0
+password = ""
+db = 0
 
 [mysqlConfig]
-host =
-port =
-user =
-password =
-databaseName =
-charset =
+host = ""
+port = 0
+user = ""
+password = ""
+databaseName = ""
+charset = ""
 
 [jwtConfig]
-expire_duration= 8760
-issuer=
-subject=
-key=
+expire_duration = 8760
+issuer = ""
+subject = ""
+key = ""
 
 [rabbitmqConfig]
-host=
-port=
-username=
-password=
-vhost=
+host = ""
+port = 0
+username = ""
+password = ""
+vhost = ""
 
 [aiConfig]
-qwenApiKey =
-qwenModel =
-qwenBaseURL =
-deepseekApiKey =
-deepseekModel =
-deepseekBaseURL =
+qwenApiKey = ""
+qwenModel = ""
+qwenBaseURL = ""
+deepseekApiKey = ""
+deepseekModel = ""
+deepseekBaseURL = ""
 timeoutSeconds = 0
 maxTokens = 0
+
+[ragModelConfig]
+apiKey = ""
+embeddingModel = ""
+chatModelName = ""
+docDir = ""
+baseUrl = ""
+dimension = 0
+
+[voiceServiceConfig]
+voiceServiceApiKey = ""
+voiceServiceSecretKey = ""
