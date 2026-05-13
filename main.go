@@ -27,11 +27,6 @@ func main() {
 
 	redis.Init()
 	log.Println("redis init success")
-	if _, err := redis.EnsureAIConfig(conf.AIConfig); err != nil {
-		log.Printf("sync ai config to redis failed: %v", err)
-	} else {
-		log.Println("sync ai config to redis success")
-	}
 
 	rabbitmq.InitRabbitMQ()
 	log.Println("rabbitmq init success")

@@ -11,12 +11,12 @@ export function getHistory(sessionId) {
   return client.post('/AI/chat/history', { sessionId })
 }
 
-export function sendMessageNewSession(question, modelType) {
-  return client.post('/AI/chat/send-new-session', { question, modelType })
+export function sendMessageNewSession(question, modelType, options = {}) {
+  return client.post('/AI/chat/send-new-session', { question, modelType, ...options })
 }
 
-export function sendMessage(sessionId, question, modelType) {
-  return client.post('/AI/chat/send', { sessionId, question, modelType })
+export function sendMessage(sessionId, question, modelType, options = {}) {
+  return client.post('/AI/chat/send', { sessionId, question, modelType, ...options })
 }
 
 function parseEventBlock(rawEvent) {
@@ -133,6 +133,8 @@ async function streamRequest({
 export function streamMessageNewSession({
   question,
   modelType,
+  enableRag,
+  enableMcp,
   token,
   onSessionId,
   onChunk,
@@ -140,7 +142,7 @@ export function streamMessageNewSession({
 }) {
   return streamRequest({
     endpoint: '/AI/chat/send-stream-new-session',
-    payload: { question, modelType },
+    payload: { question, modelType, enableRag, enableMcp },
     token,
     onSessionId,
     onChunk,
@@ -152,13 +154,15 @@ export function streamMessage({
   sessionId,
   question,
   modelType,
+  enableRag,
+  enableMcp,
   token,
   onChunk,
   onDone,
 }) {
   return streamRequest({
     endpoint: '/AI/chat/send-stream',
-    payload: { sessionId, question, modelType },
+    payload: { sessionId, question, modelType, enableRag, enableMcp },
     token,
     onChunk,
     onDone,

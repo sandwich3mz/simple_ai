@@ -34,13 +34,20 @@ username = ""
 password = ""
 vhost = ""
 
-[aiConfig]
-qwenApiKey = ""
-qwenModel = ""
-qwenBaseURL = ""
-deepseekApiKey = ""
-deepseekModel = ""
-deepseekBaseURL = ""
+[llm]
+defaultProvider = "qwen"
+
+[llm.qwen]
+apiKey = ""
+model = "qwen-turbo"
+baseURL = ""
+timeoutSeconds = 0
+maxTokens = 0
+
+[llm.deepseek]
+apiKey = ""
+model = "deepseek-chat"
+baseURL = ""
 timeoutSeconds = 0
 maxTokens = 0
 
@@ -51,6 +58,15 @@ chatModelName = ""
 docDir = ""
 baseUrl = ""
 dimension = 0
+
+[mcpConfig]
+enabled = false
+serverURL = "http://localhost:8081/mcp"
+apiKey = ""
+model = ""
+baseURL = ""
+timeoutSeconds = 0
+maxTokens = 0
 
 [voiceServiceConfig]
 voiceServiceApiKey = ""

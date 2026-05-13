@@ -48,15 +48,20 @@ type Rabbitmq struct {
 	RabbitmqVhost    string `toml:"vhost"`
 }
 
-type AIConfig struct {
-	QwenAPIKey      string `toml:"qwenApiKey"`
-	QwenModel       string `toml:"qwenModel"`
-	QwenBaseURL     string `toml:"qwenBaseURL"`
-	DeepseekAPIKey  string `toml:"deepseekApiKey"`
-	DeepseekModel   string `toml:"deepseekModel"`
-	DeepseekBaseURL string `toml:"deepseekBaseURL"`
-	TimeoutSeconds  int    `toml:"timeoutSeconds"`
-	MaxTokens       int    `toml:"maxTokens"`
+// LLMProviderConfig 描述一个可配置的底座模型提供方。
+type LLMProviderConfig struct {
+	APIKey         string `toml:"apiKey"`
+	Model          string `toml:"model"`
+	BaseURL        string `toml:"baseURL"`
+	TimeoutSeconds int    `toml:"timeoutSeconds"`
+	MaxTokens      int    `toml:"maxTokens"`
+}
+
+// LLMConfig 汇总底座模型提供方配置和默认提供方。
+type LLMConfig struct {
+	DefaultProvider string            `toml:"defaultProvider"`
+	Qwen            LLMProviderConfig `toml:"qwen"`
+	DeepSeek        LLMProviderConfig `toml:"deepseek"`
 }
 
 type RagModelConfig struct {
@@ -73,9 +78,19 @@ type VoiceServiceConfig struct {
 	VoiceServiceSecretKey string `toml:"voiceServiceSecretKey"`
 }
 
+// MCPConfig 描述 MCP 增强器及其路由模型配置。
+type MCPConfig struct {
+	Enabled        bool   `toml:"enabled"`
+	ServerURL      string `toml:"serverURL"`
+	APIKey         string `toml:"apiKey"`
+	Model          string `toml:"model"`
+	BaseURL        string `toml:"baseURL"`
+	TimeoutSeconds int    `toml:"timeoutSeconds"`
+	MaxTokens      int    `toml:"maxTokens"`
+}
+
 var DefaultRedisKeyConfig = RedisKeyConfig{
 	CaptchaPrefix:   "captcha:%s",
-	AIConfigKey:     "ai:config",
 	IndexName:       "rag_docs:%s:idx",
 	IndexNamePrefix: "rag_docs:%s:",
 }
@@ -87,14 +102,14 @@ type Config struct {
 	JwtConfig          `toml:"jwtConfig"`
 	MainConfig         `toml:"mainConfig"`
 	Rabbitmq           `toml:"rabbitmqConfig"`
-	AIConfig           `toml:"aiConfig"`
+	LLMConfig          `toml:"llm"`
 	RagModelConfig     `toml:"ragModelConfig"`
+	MCPConfig          `toml:"mcpConfig"`
 	VoiceServiceConfig `toml:"voiceServiceConfig"`
 }
 
 type RedisKeyConfig struct {
 	CaptchaPrefix   string
-	AIConfigKey     string
 	IndexName       string
 	IndexNamePrefix string
 }
@@ -117,4 +132,28 @@ func GetConfig() *Config {
 		_ = InitConfig()
 	}
 	return config
+}
+
+// GetDefaultProvider 返回配置中的默认底座模型提供方。
+func (c *Config) GetDefaultProvider() string {
+	if c != nil && c.LLMConfig.DefaultProvider != "" {
+		return c.LLMConfig.DefaultProvider
+	}
+	return "qwen"
+}
+
+// GetLLMProviderConfig 返回指定底座模型提供方配置。
+func (c *Config) GetLLMProviderConfig(provider string) LLMProviderConfig {
+	if c == nil {
+		return LLMProviderConfig{}
+	}
+
+	switch provider {
+	case "qwen":
+		return c.LLMConfig.Qwen
+	case "deepseek":
+		return c.LLMConfig.DeepSeek
+	default:
+		return LLMProviderConfig{}
+	}
 }

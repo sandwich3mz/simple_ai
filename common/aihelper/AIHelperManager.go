@@ -9,31 +9,31 @@ import (
 	"time"
 )
 
-// Manager 用于管理用户与会话之间的 AIHelper 映射关系。
-// 结构为：userName -> sessionID -> *AIHelper。
+// Manager 按 userName -> sessionID -> helper 的结构管理会话助手。
 type Manager struct {
 	mutex   sync.RWMutex
 	helpers map[string]map[string]*AIHelper
 }
 
-// newAIHelperManager 创建 AIHelper 管理器实例，仅用于单例初始化。
 func newAIHelperManager() *Manager {
 	return &Manager{
 		helpers: make(map[string]map[string]*AIHelper),
 	}
 }
 
-// GetOrCreateAIHelper 获取或创建指定用户、指定会话的 AIHelper。
-// 当会话不存在时，会基于 modelType 和 config 通过工厂创建 AIModel。
-func (m *Manager) GetOrCreateAIHelper(userName, sessionID, modelType string, config map[string]interface{}) (*AIHelper, error) {
+// GetOrCreateAIHelper 返回已有会话助手，或用指定底座模型和增强器创建新助手。
+func (m *Manager) GetOrCreateAIHelper(userName, sessionID string, factoryConfig *AIModelFactoryConfig, enhancers ...MessageEnhancer) (*AIHelper, error) {
 	if userName == "" {
-		return nil, fmt.Errorf("userName 不能为空")
+		return nil, fmt.Errorf("userName cannot be empty")
 	}
 	if sessionID == "" {
-		return nil, fmt.Errorf("sessionID 不能为空")
+		return nil, fmt.Errorf("sessionID cannot be empty")
 	}
-	if modelType == "" {
-		return nil, fmt.Errorf("modelType 不能为空")
+	if factoryConfig == nil {
+		return nil, fmt.Errorf("ai model factory config is nil")
+	}
+	if factoryConfig.Provider == "" {
+		return nil, fmt.Errorf("model provider cannot be empty")
 	}
 
 	m.mutex.Lock()
@@ -46,28 +46,23 @@ func (m *Manager) GetOrCreateAIHelper(userName, sessionID, modelType string, con
 	}
 
 	if helper, exists := userHelpers[sessionID]; exists {
+		helper.SetMessageEnhancers(enhancers...)
 		return helper, nil
 	}
 
-	factoryConfig, err := buildFactoryConfig(modelType, config)
-	if err != nil {
-		return nil, err
-	}
-
+	factoryConfig.UserName = userName
 	aiModel, err := GetGlobalAIModelFactory().Create(context.Background(), factoryConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	helper := NewAIHelper(aiModel, sessionID)
-	helper.SessionID = sessionID
+	helper := NewAIHelper(aiModel, sessionID, WithMessageEnhancers(enhancers...))
 	userHelpers[sessionID] = helper
 
 	return helper, nil
 }
 
-// GetAIHelper 获取指定用户的指定会话 AIHelper。
-// 返回值中的 bool 表示是否命中。
+// GetAIHelper 在会话仍驻留内存时返回对应助手。
 func (m *Manager) GetAIHelper(userName, sessionID string) (*AIHelper, bool) {
 	if userName == "" || sessionID == "" {
 		return nil, false
@@ -85,8 +80,7 @@ func (m *Manager) GetAIHelper(userName, sessionID string) (*AIHelper, bool) {
 	return helper, exists
 }
 
-// RemoveAIHelper 移除指定用户的指定会话 AIHelper。
-// 返回 true 表示已删除，false 表示目标不存在。
+// RemoveAIHelper 删除指定用户的一个内存会话助手。
 func (m *Manager) RemoveAIHelper(userName, sessionID string) bool {
 	if userName == "" || sessionID == "" {
 		return false
@@ -112,8 +106,7 @@ func (m *Manager) RemoveAIHelper(userName, sessionID string) bool {
 	return true
 }
 
-// GetUserSessionIDs 获取指定用户下的所有会话 ID。
-// 返回结果按字典序排序，便于调用方稳定展示。
+// GetUserSessionIDs 返回指定用户的内存会话 ID 列表，并按字典序排序。
 func (m *Manager) GetUserSessionIDs(userName string) []string {
 	if userName == "" {
 		return []string{}
@@ -140,7 +133,7 @@ var (
 	globalAIHelperManagerOnce sync.Once
 )
 
-// GetGlobalManager 返回全局唯一的 AIHelper 管理器实例（单例）。
+// GetGlobalManager 返回全局单例会话助手管理器。
 func GetGlobalManager() *Manager {
 	globalAIHelperManagerOnce.Do(func() {
 		globalAIHelperManager = newAIHelperManager()
@@ -187,7 +180,7 @@ func normalizeProvider(modelType string) (AIModelProvider, error) {
 	case string(AIModelProviderDeepSeek), "deepseek-chat", "deepseek-reasoner":
 		return AIModelProviderDeepSeek, nil
 	default:
-		return "", fmt.Errorf("不支持的模型类型: %s", modelType)
+		return "", fmt.Errorf("unsupported model provider: %s", modelType)
 	}
 }
 

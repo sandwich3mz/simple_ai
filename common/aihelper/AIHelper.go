@@ -10,52 +10,91 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
+// AIHelper 管理单个聊天会话的内存上下文。
 type AIHelper struct {
 	aiModel   AIModel
 	messages  []*model.Message
 	mutex     sync.RWMutex
 	SessionID string
 	saveFunc  func(*model.Message) (*model.Message, error)
+	enhancers []MessageEnhancer
 }
 
-func NewAIHelper(aiModel AIModel, SessionID string) *AIHelper {
-	return &AIHelper{
+// AIHelperOption 用于在创建 AIHelper 时注入自定义配置。
+type AIHelperOption func(*AIHelper)
+
+// MessageEnhancer 在调用底座模型前增强或改写聊天消息。
+type MessageEnhancer interface {
+	EnhanceMessages(ctx context.Context, messages []*schema.Message) ([]*schema.Message, error)
+}
+
+// MessageEnhancerFunc 将函数适配为 MessageEnhancer。
+type MessageEnhancerFunc func(ctx context.Context, messages []*schema.Message) ([]*schema.Message, error)
+
+// EnhanceMessages 执行函数形式的消息增强器。
+func (f MessageEnhancerFunc) EnhanceMessages(ctx context.Context, messages []*schema.Message) ([]*schema.Message, error) {
+	return f(ctx, messages)
+}
+
+// WithMessageEnhancers 为 AIHelper 挂载一个或多个消息增强器。
+func WithMessageEnhancers(enhancers ...MessageEnhancer) AIHelperOption {
+	return func(helper *AIHelper) {
+		helper.SetMessageEnhancers(enhancers...)
+	}
+}
+
+// NewAIHelper 创建单个会话的 AIHelper，并配置默认持久化回调。
+func NewAIHelper(aiModel AIModel, sessionID string, opts ...AIHelperOption) *AIHelper {
+	helper := &AIHelper{
 		aiModel:  aiModel,
 		messages: make([]*model.Message, 0),
-		//异步推送到消息队列中
 		saveFunc: func(msg *model.Message) (*model.Message, error) {
 			data := rabbitmq.GenerateMessageMQParam(msg.SessionID, msg.Content, msg.UserName, msg.IsUser)
 			err := rabbitmq.RMQMessage.Publish(data)
 			return msg, err
 		},
-		SessionID: SessionID,
+		SessionID: sessionID,
 	}
-}
 
-// AddMessage  添加消息到内存中并调用自定义存储函数
-func (a *AIHelper) AddMessage(Content string, UserName string, IsUser bool, Save bool) {
-	userMsg := model.Message{
-		SessionID: a.SessionID,
-		Content:   Content,
-		UserName:  UserName,
-		IsUser:    IsUser,
-	}
-	a.messages = append(a.messages, &userMsg)
-	if Save && a.saveFunc != nil {
-		_, err := a.saveFunc(&userMsg)
-		if err != nil {
-			return
+	for _, opt := range opts {
+		if opt != nil {
+			opt(helper)
 		}
 	}
+
+	return helper
 }
 
-// SetSaveFunc 保存消息到数据库（通过回调函数避免循环依赖）
-// 通过传入func，自己调用外部的保存函数，即可支持同步异步等多种策略
+// AddMessage 将消息追加到内存中，并按需发布到持久化队列。
+func (a *AIHelper) AddMessage(content string, userName string, isUser bool, save bool) {
+	userMsg := model.Message{
+		SessionID: a.SessionID,
+		Content:   content,
+		UserName:  userName,
+		IsUser:    isUser,
+	}
+	a.messages = append(a.messages, &userMsg)
+	if save && a.saveFunc != nil {
+		_, _ = a.saveFunc(&userMsg)
+	}
+}
+
+// SetSaveFunc 替换消息保存时使用的持久化回调。
 func (a *AIHelper) SetSaveFunc(saveFunc func(*model.Message) (*model.Message, error)) {
 	a.saveFunc = saveFunc
 }
 
-// GetMessages 获取所有消息历史
+// SetMessageEnhancers 替换模型生成前执行的增强器链。
+func (a *AIHelper) SetMessageEnhancers(enhancers ...MessageEnhancer) {
+	a.enhancers = a.enhancers[:0]
+	for _, enhancer := range enhancers {
+		if enhancer != nil {
+			a.enhancers = append(a.enhancers, enhancer)
+		}
+	}
+}
+
+// GetMessages 返回当前内存消息历史的快照。
 func (a *AIHelper) GetMessages() []*model.Message {
 	a.mutex.RLock()
 	defer a.mutex.RUnlock()
@@ -64,49 +103,20 @@ func (a *AIHelper) GetMessages() []*model.Message {
 	return out
 }
 
-// GenerateResponse 同步生成
+// GenerateResponse 追加用户消息，执行增强器，并返回非流式模型响应。
 func (a *AIHelper) GenerateResponse(userName string, ctx context.Context, userQuestion string) (*model.Message, error) {
-
-	//调用存储函数
-	a.AddMessage(userQuestion, userName, true, true)
-
-	a.mutex.RLock()
-	//将model.Message转化成schema.Message
-	messages := utils.ConvertToSchemaMessages(a.messages)
-	a.mutex.RUnlock()
-
-	//调用模型生成回复
-	content := a.aiModel.GenerateResponse(ctx, toSchemaMessageValues(messages))
-
-	//将模型返回内容转化成model.Message
-	modelMsg := &model.Message{
-		SessionID: a.SessionID,
-		UserName:  userName,
-		Content:   content,
-		IsUser:    false,
-	}
-
-	//调用存储函数
-	a.AddMessage(modelMsg.Content, userName, false, true)
-
-	return modelMsg, nil
-}
-
-// StreamResponse 流式生成
-func (a *AIHelper) StreamResponse(userName string, ctx context.Context, cb StreamCallback, userQuestion string) (*model.Message, error) {
-
-	//调用存储函数
 	a.AddMessage(userQuestion, userName, true, true)
 
 	a.mutex.RLock()
 	messages := utils.ConvertToSchemaMessages(a.messages)
 	a.mutex.RUnlock()
 
-	content, err := a.aiModel.StreamResponse(ctx, toSchemaMessageValues(messages), cb)
+	enhancedMessages, err := a.enhanceMessages(ctx, messages)
 	if err != nil {
 		return nil, err
 	}
-	//转化成model.Message
+
+	content := a.aiModel.GenerateResponse(ctx, toSchemaMessageValues(enhancedMessages))
 	modelMsg := &model.Message{
 		SessionID: a.SessionID,
 		UserName:  userName,
@@ -114,13 +124,40 @@ func (a *AIHelper) StreamResponse(userName string, ctx context.Context, cb Strea
 		IsUser:    false,
 	}
 
-	//调用存储函数
 	a.AddMessage(modelMsg.Content, userName, false, true)
-
 	return modelMsg, nil
 }
 
-// GetModelType 获取模型类型
+// StreamResponse 追加用户消息，执行增强器，并通过回调流式返回模型响应。
+func (a *AIHelper) StreamResponse(userName string, ctx context.Context, cb StreamCallback, userQuestion string) (*model.Message, error) {
+	a.AddMessage(userQuestion, userName, true, true)
+
+	a.mutex.RLock()
+	messages := utils.ConvertToSchemaMessages(a.messages)
+	a.mutex.RUnlock()
+
+	enhancedMessages, err := a.enhanceMessages(ctx, messages)
+	if err != nil {
+		return nil, err
+	}
+
+	content, err := a.aiModel.StreamResponse(ctx, toSchemaMessageValues(enhancedMessages), cb)
+	if err != nil {
+		return nil, err
+	}
+
+	modelMsg := &model.Message{
+		SessionID: a.SessionID,
+		UserName:  userName,
+		Content:   content,
+		IsUser:    false,
+	}
+
+	a.AddMessage(modelMsg.Content, userName, false, true)
+	return modelMsg, nil
+}
+
+// GetModelType 返回底座模型类型。
 func (a *AIHelper) GetModelType() string {
 	return a.aiModel.GetModelType()
 }
@@ -140,4 +177,16 @@ func toSchemaMessageValues(messages []*schema.Message) *[]schema.Message {
 	}
 
 	return &values
+}
+
+func (a *AIHelper) enhanceMessages(ctx context.Context, messages []*schema.Message) ([]*schema.Message, error) {
+	enhanced := messages
+	for _, enhancer := range a.enhancers {
+		next, err := enhancer.EnhanceMessages(ctx, enhanced)
+		if err != nil {
+			return nil, err
+		}
+		enhanced = next
+	}
+	return enhanced, nil
 }

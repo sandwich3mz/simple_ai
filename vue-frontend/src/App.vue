@@ -10,13 +10,19 @@ import {
   streamMessageNewSession,
 } from './api/chat'
 import { normalizeError, setAuthToken } from './api/client'
+import { uploadRagFile } from './api/file'
+import { resolveBaseModelSwitch } from './utils/sessionSwitch'
 
 const TOKEN_KEY = 'simple_ai_token'
 const MODEL_KEY = 'simple_ai_model'
+const RAG_KEY = 'simple_ai_enable_rag'
+const MCP_KEY = 'simple_ai_enable_mcp'
 const CAPTCHA_COOLDOWN_SECONDS = 60
 
 const token = ref(localStorage.getItem(TOKEN_KEY) || '')
 const modelType = ref(localStorage.getItem(MODEL_KEY) || 'qwen')
+const enableRag = ref(localStorage.getItem(RAG_KEY) === 'true')
+const enableMcp = ref(localStorage.getItem(MCP_KEY) === 'true')
 const streamMode = ref(true)
 
 const sessions = ref([])
@@ -39,6 +45,10 @@ const captchaLoading = ref(false)
 const captchaCooldown = ref(0)
 let captchaCooldownTimer = null
 
+const selectedRagFile = ref(null)
+const ragUploadLoading = ref(false)
+const uploadedRagPath = ref('')
+
 const alertText = ref('')
 const alertType = ref('info')
 const messageContainer = ref(null)
@@ -48,6 +58,9 @@ setAuthToken(token.value)
 const canSend = computed(() => token.value && inputText.value.trim() && !sending.value)
 const canSendCaptcha = computed(
   () => registerEmail.value.trim() && !captchaLoading.value && captchaCooldown.value === 0,
+)
+const canUploadRagFile = computed(
+  () => token.value && selectedRagFile.value && !ragUploadLoading.value,
 )
 const captchaButtonText = computed(() => {
   if (captchaLoading.value) {
@@ -63,8 +76,31 @@ const currentSessionTitle = computed(() => {
   return match?.name || '新会话'
 })
 
-watch(modelType, (value) => {
+watch(modelType, (value, oldValue) => {
   localStorage.setItem(MODEL_KEY, value)
+  if (!oldValue || oldValue === value || !token.value) {
+    return
+  }
+
+  const switchState = resolveBaseModelSwitch({
+    currentSessionId: currentSessionId.value,
+    messageCount: messages.value.length,
+    nextModelType: value,
+  })
+
+  if (switchState.shouldStartNewSession) {
+    currentSessionId.value = ''
+    messages.value = []
+  }
+  showAlert(switchState.alertText, 'info')
+})
+
+watch(enableRag, (value) => {
+  localStorage.setItem(RAG_KEY, value ? 'true' : 'false')
+})
+
+watch(enableMcp, (value) => {
+  localStorage.setItem(MCP_KEY, value ? 'true' : 'false')
 })
 
 watch(
@@ -214,6 +250,28 @@ function resetAuthForms() {
   clearCaptchaCooldownTimer()
 }
 
+function onRagFileChange(event) {
+  selectedRagFile.value = event.target.files?.[0] || null
+}
+
+async function onUploadRagFile() {
+  if (!canUploadRagFile.value) {
+    return
+  }
+
+  clearAlert()
+  ragUploadLoading.value = true
+  try {
+    const data = await uploadRagFile(selectedRagFile.value)
+    uploadedRagPath.value = data.file_path || ''
+    showAlert('知识库已更新，后续提问将使用最新文件', 'success')
+  } catch (error) {
+    showAlert(normalizeError(error))
+  } finally {
+    ragUploadLoading.value = false
+  }
+}
+
 async function onLogin() {
   clearAlert()
   authLoading.value = true
@@ -283,17 +341,20 @@ function onLogout() {
   sessions.value = []
   messages.value = []
   currentSessionId.value = ''
+  selectedRagFile.value = null
+  uploadedRagPath.value = ''
   showAlert('已退出登录', 'info')
 }
 
 async function sendPlain(question, assistantMessage) {
+  const options = { enableRag: enableRag.value, enableMcp: enableMcp.value }
   if (!currentSessionId.value) {
-    const data = await sendMessageNewSession(question, modelType.value)
+    const data = await sendMessageNewSession(question, modelType.value, options)
     assistantMessage.content = data.Information || ''
     bindSession(data.sessionId, question)
     return
   }
-  const data = await sendMessage(currentSessionId.value, question, modelType.value)
+  const data = await sendMessage(currentSessionId.value, question, modelType.value, options)
   assistantMessage.content = data.Information || ''
 }
 
@@ -305,6 +366,8 @@ async function sendStream(question, assistantMessage) {
     await streamMessageNewSession({
       question,
       modelType: modelType.value,
+      enableRag: enableRag.value,
+      enableMcp: enableMcp.value,
       token: token.value,
       onSessionId: (sessionId) => bindSession(sessionId, question),
       onChunk: (chunk) => {
@@ -319,6 +382,8 @@ async function sendStream(question, assistantMessage) {
     sessionId: currentSessionId.value,
     question,
     modelType: modelType.value,
+    enableRag: enableRag.value,
+    enableMcp: enableMcp.value,
     token: token.value,
     onChunk: (chunk) => {
       assistantMessage.content += chunk
@@ -434,32 +499,60 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div v-else class="panel session-panel">
-        <div class="panel-head">
-          <strong>会话列表</strong>
-          <div class="inline">
-            <button class="ghost-btn" @click="onCreateSession">新建会话</button>
-            <button class="ghost-btn" :disabled="loadingSessions" @click="refreshSessions()">
-              刷新
+      <template v-else>
+        <div class="panel session-panel">
+          <div class="panel-head">
+            <strong>会话列表</strong>
+            <div class="inline">
+              <button class="ghost-btn" @click="onCreateSession">新建会话</button>
+              <button class="ghost-btn" :disabled="loadingSessions" @click="refreshSessions()">
+                刷新
+              </button>
+            </div>
+          </div>
+
+          <div class="session-list">
+            <button
+              v-for="session in sessions"
+              :key="session.sessionId"
+              class="session-item"
+              :class="{ active: session.sessionId === currentSessionId }"
+              @click="selectSession(session.sessionId)"
+            >
+              {{ sessionLabel(session) }}
             </button>
+            <div class="empty" v-if="!sessions.length">暂无会话，先发一条消息开始对话</div>
+          </div>
+
+          <button class="action-btn danger" @click="onLogout">退出登录</button>
+        </div>
+
+        <div class="panel rag-panel">
+          <div class="panel-head">
+            <strong>知识库文件</strong>
+          </div>
+          <p class="panel-note">每个用户当前只保留一个知识库文件，新上传会替换旧文件。</p>
+
+          <label class="file-picker">
+            <input
+              type="file"
+              accept=".txt,.md"
+              :disabled="ragUploadLoading"
+              @change="onRagFileChange"
+            />
+            <span>{{ selectedRagFile?.name || '选择 .txt / .md 文件' }}</span>
+          </label>
+
+          <button class="action-btn" :disabled="!canUploadRagFile" @click="onUploadRagFile">
+            {{ ragUploadLoading ? '上传中...' : '上传知识库' }}
+          </button>
+
+          <div class="file-status" v-if="uploadedRagPath">
+            <small>已索引文件</small>
+            <span>{{ uploadedRagPath }}</span>
           </div>
         </div>
-
-        <div class="session-list">
-          <button
-            v-for="session in sessions"
-            :key="session.sessionId"
-            class="session-item"
-            :class="{ active: session.sessionId === currentSessionId }"
-            @click="selectSession(session.sessionId)"
-          >
-            {{ sessionLabel(session) }}
-          </button>
-          <div class="empty" v-if="!sessions.length">暂无会话，先发一条消息开始对话</div>
-        </div>
-
-        <button class="action-btn danger" @click="onLogout">退出登录</button>
-      </div>
+      </template>
     </aside>
 
     <main class="chat-panel">
@@ -470,10 +563,18 @@ onUnmounted(() => {
         </div>
 
         <div class="toolbar-actions">
-          <select v-model="modelType">
+          <select v-model="modelType" :disabled="sending">
             <option value="qwen">qwen</option>
             <option value="deepseek">deepseek</option>
           </select>
+          <label class="stream-toggle">
+            <input v-model="enableRag" type="checkbox" />
+            RAG
+          </label>
+          <label class="stream-toggle">
+            <input v-model="enableMcp" type="checkbox" />
+            MCP
+          </label>
           <label class="stream-toggle">
             <input v-model="streamMode" type="checkbox" />
             流式输出
