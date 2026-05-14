@@ -87,7 +87,7 @@ func (r *RabbitMQ) Publish(message []byte) error {
 
 // Consume 消费者
 // handle: 消息的消费业务函数，用于消费消息
-func (r *RabbitMQ) Consume(handle func(msg *amqp.Delivery) error) {
+func (r *RabbitMQ) Consume(handle func(param MessageMQParam) error) {
 	// 创建队列
 	q, err := r.channel.QueueDeclare(r.Key, false, false, false, false, nil)
 	if err != nil {
@@ -95,15 +95,15 @@ func (r *RabbitMQ) Consume(handle func(msg *amqp.Delivery) error) {
 	}
 
 	// 接收消息
-	msgs, err := r.channel.Consume(q.Name, "", true, false, false, false, nil)
+	msgs, err := r.channel.Consume(q.Name, "", false, false, false, false, nil)
 	if err != nil {
 		panic(err)
 	}
 
 	// 处理消息
 	for msg := range msgs {
-		if err := handle(&msg); err != nil {
-			fmt.Println(err.Error())
+		if err := handleConsumedDelivery(amqpConsumedDelivery{delivery: &msg}, handle); err != nil {
+			log.Println(err.Error())
 		}
 	}
 }

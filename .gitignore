@@ -1,1 +1,4 @@
 /config/config.toml
+AGENTS.md
+*_test.go
+.gocache

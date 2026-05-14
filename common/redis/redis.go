@@ -98,6 +98,11 @@ func DeleteRedisIndex(ctx context.Context, filename string) error {
 	indexName := GenerateIndexName(filename)
 
 	if err := Rdb.Do(ctx, "FT.DROPINDEX", indexName).Err(); err != nil {
+		if strings.Contains(err.Error(), "Unknown index name") {
+			// 上传新知识库时可能清理一个已经不存在的旧索引，这种情况不应中断上传。
+			fmt.Println("索引不存在，跳过删除")
+			return nil
+		}
 		return fmt.Errorf("删除索引失败: %w", err)
 	}
 

@@ -7,6 +7,7 @@ import (
 	"simple_ai/common/redis"
 	redisPkg "simple_ai/common/redis"
 	"simple_ai/config"
+	"strings"
 
 	embeddingArk "github.com/cloudwego/eino-ext/components/embedding/ark"
 	redisIndexer "github.com/cloudwego/eino-ext/components/indexer/redis"
@@ -15,6 +16,12 @@ import (
 	"github.com/cloudwego/eino/components/retriever"
 	"github.com/cloudwego/eino/schema"
 	redisCli "github.com/redis/go-redis/v9"
+)
+
+const (
+	// 默认按 1200 rune 切块，并保留 150 rune 重叠，兼顾检索粒度和上下文连续性。
+	defaultRAGChunkSize    = 1200
+	defaultRAGChunkOverlap = 150
 )
 
 type RAGIndexer struct {
@@ -58,11 +65,21 @@ func NewRAGIndexer(filename, embeddingModel string) (*RAGIndexer, error) {
 				source = s
 			}
 
+			chunkIndex := ""
+			if idx, ok := doc.MetaData["chunk_index"]; ok {
+				chunkIndex = fmt.Sprintf("%v", idx)
+			}
+			metadata := source
+			if chunkIndex != "" {
+				metadata = fmt.Sprintf("%s#chunk=%s", source, chunkIndex)
+			}
+
+			// key 必须带 Redis index prefix，否则 RediSearch 的 PREFIX 规则检索不到该 chunk。
 			return &redisIndexer.Hashes{
-				Key: fmt.Sprintf("%s:%s", filename, doc.ID),
+				Key: redis.GenerateIndexNamePrefix(filename) + doc.ID,
 				Field2Value: map[string]redisIndexer.FieldValue{
 					"content":  {Value: doc.Content, EmbedKey: "vector"},
-					"metadata": {Value: source},
+					"metadata": {Value: metadata},
 				},
 			}, nil
 		},
@@ -86,20 +103,107 @@ func (r *RAGIndexer) IndexFile(ctx context.Context, filePath string) error {
 		return fmt.Errorf("failed to read file: %w", err)
 	}
 
-	doc := &schema.Document{
-		ID:      "doc_1",
-		Content: string(content),
-		MetaData: map[string]any{
-			"source": filePath,
-		},
+	chunks := splitTextIntoChunks(string(content), defaultRAGChunkSize, defaultRAGChunkOverlap)
+	if len(chunks) == 0 {
+		return fmt.Errorf("file has no indexable content")
 	}
 
-	_, err = r.indexer.Store(ctx, []*schema.Document{doc})
+	docs := make([]*schema.Document, 0, len(chunks))
+	for i, chunk := range chunks {
+		// 每个 chunk 单独入索引，metadata 保留来源文件和 chunk 序号。
+		docs = append(docs, &schema.Document{
+			ID:      fmt.Sprintf("chunk_%04d", i+1),
+			Content: chunk,
+			MetaData: map[string]any{
+				"source":      filePath,
+				"chunk_index": i + 1,
+			},
+		})
+	}
+
+	_, err = r.indexer.Store(ctx, docs)
 	if err != nil {
 		return fmt.Errorf("failed to store document: %w", err)
 	}
 
 	return nil
+}
+
+func splitTextIntoChunks(text string, chunkSize int, overlap int) []string {
+	if chunkSize <= 0 || overlap < 0 || overlap >= chunkSize {
+		return nil
+	}
+
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return nil
+	}
+
+	if !strings.Contains(text, "\n\n") {
+		// 没有明显段落时按 rune 切分，避免中文文本被 byte 截断。
+		return splitRunesWithOverlap(text, chunkSize, overlap)
+	}
+
+	// 优先按空行分隔的段落聚合，尽量保持自然语义边界。
+	paragraphs := strings.Split(text, "\n\n")
+	chunks := make([]string, 0)
+	var current strings.Builder
+	for _, paragraph := range paragraphs {
+		paragraph = strings.TrimSpace(paragraph)
+		if paragraph == "" {
+			continue
+		}
+		if len([]rune(paragraph)) > chunkSize {
+			if strings.TrimSpace(current.String()) != "" {
+				chunks = append(chunks, strings.TrimSpace(current.String()))
+				current.Reset()
+			}
+			chunks = append(chunks, splitRunesWithOverlap(paragraph, chunkSize, overlap)...)
+			continue
+		}
+
+		candidate := paragraph
+		if current.Len() > 0 {
+			candidate = current.String() + "\n\n" + paragraph
+		}
+		if len([]rune(candidate)) > chunkSize && current.Len() > 0 {
+			chunks = append(chunks, strings.TrimSpace(current.String()))
+			current.Reset()
+			current.WriteString(paragraph)
+			continue
+		}
+		if current.Len() > 0 {
+			current.WriteString("\n\n")
+		}
+		current.WriteString(paragraph)
+	}
+
+	if strings.TrimSpace(current.String()) != "" {
+		chunks = append(chunks, strings.TrimSpace(current.String()))
+	}
+	return chunks
+}
+
+func splitRunesWithOverlap(text string, chunkSize int, overlap int) []string {
+	runes := []rune(text)
+	if len(runes) == 0 {
+		return nil
+	}
+
+	chunks := make([]string, 0, (len(runes)/chunkSize)+1)
+	for start := 0; start < len(runes); {
+		end := start + chunkSize
+		if end > len(runes) {
+			end = len(runes)
+		}
+		chunks = append(chunks, string(runes[start:end]))
+		if end == len(runes) {
+			break
+		}
+		// 下一块从上一块尾部向前回退 overlap，保留跨块上下文。
+		start = end - overlap
+	}
+	return chunks
 }
 
 func DeleteIndex(ctx context.Context, filename string) error {

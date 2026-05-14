@@ -17,6 +17,9 @@ import (
 	"github.com/google/uuid"
 )
 
+// MaxUploadFileSize 限制 RAG 知识库上传文件大小
+const MaxUploadFileSize int64 = 5 * 1024 * 1024
+
 func GetRandomNumbers(num int) string {
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 
@@ -92,6 +95,10 @@ func ValidateFile(file *multipart.FileHeader) error {
 	ext := strings.ToLower(filepath.Ext(file.Filename))
 	if ext != ".md" && ext != ".txt" {
 		return fmt.Errorf("文件类型不正确，只允许 .md 或 .txt 文件，当前扩展名: %s", ext)
+	}
+	// multipart.FileHeader.Size 来自请求头解析结果，服务层保存文件前先做快速拒绝。
+	if file.Size > MaxUploadFileSize {
+		return fmt.Errorf("file size exceeds limit: %d bytes > %d bytes", file.Size, MaxUploadFileSize)
 	}
 
 	return nil

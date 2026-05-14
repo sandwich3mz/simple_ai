@@ -8,7 +8,8 @@ import (
 	"simple_ai/common/aihelper"
 	"simple_ai/common/code"
 	appconfig "simple_ai/config"
-	"simple_ai/dao/session"
+	messageDAO "simple_ai/dao/message"
+	sessionDAO "simple_ai/dao/session"
 	"simple_ai/model"
 	"strings"
 	"time"
@@ -17,6 +18,28 @@ import (
 )
 
 var ctx = context.Background()
+
+// sessionStoreFuncs 抽象会话持久化依赖，便于从数据库恢复会话并在单测中替换实现。
+type sessionStoreFuncs struct {
+	createSession        func(*model.Session) (*model.Session, error)
+	listByUserName       func(string) ([]model.Session, error)
+	sessionBelongsToUser func(string, string) (bool, error)
+	messagesBySession    func(string, string) ([]model.Message, error)
+}
+
+var sessionStore = sessionStoreFuncs{
+	createSession:  sessionDAO.CreateSession,
+	listByUserName: sessionDAO.GetSessionsByUserName,
+	sessionBelongsToUser: func(userName, sessionID string) (bool, error) {
+		// 发送已有会话前校验归属，防止用户伪造 sessionId 访问他人上下文。
+		_, err := sessionDAO.GetSessionByIDAndUserName(sessionID, userName)
+		if err != nil {
+			return false, err
+		}
+		return true, nil
+	},
+	messagesBySession: messageDAO.GetMessagesByUserNameAndSessionID,
+}
 
 // ChatFeatureOptions 控制叠加到底座模型上的可选能力。
 type ChatFeatureOptions struct {
@@ -101,16 +124,117 @@ func buildMessageEnhancers(ctx context.Context, userName string, runtime ChatRun
 	return enhancers, nil
 }
 
-// GetUserSessionsByUserName 返回指定用户的内存会话列表。
-func GetUserSessionsByUserName(userName string) ([]model.SessionInfo, error) {
+func ensureSessionBelongsToUser(userName string, sessionID string) code.Code {
+	if sessionStore.sessionBelongsToUser == nil {
+		return code.CodeServerBusy
+	}
+
+	ok, err := sessionStore.sessionBelongsToUser(userName, sessionID)
+	if err != nil {
+		log.Println("ensureSessionBelongsToUser error:", err)
+		return code.CodeInvalidParams
+	}
+	if !ok {
+		return code.CodeInvalidParams
+	}
+	return code.CodeSuccess
+}
+
+func restoreHelperMessages(userName string, sessionID string, helper *aihelper.AIHelper) code.Code {
+	if sessionStore.messagesBySession == nil {
+		return code.CodeServerBusy
+	}
+
+	messages, err := sessionStore.messagesBySession(userName, sessionID)
+	if err != nil {
+		log.Println("restoreHelperMessages error:", err)
+		return code.CodeServerBusy
+	}
+	// 进程重启或 helper 被回收后，用数据库历史恢复模型上下文。
+	helper.LoadMessages(messages)
+	return code.CodeSuccess
+}
+
+func getOrCreateExistingSessionHelper(userName string, sessionID string, modelType string, options ChatFeatureOptions) (*aihelper.AIHelper, code.Code) {
+	if codeValue := ensureSessionBelongsToUser(userName, sessionID); codeValue != code.CodeSuccess {
+		return nil, codeValue
+	}
+
 	manager := aihelper.GetGlobalManager()
-	sessions := manager.GetUserSessionIDs(userName)
+	_, alreadyInMemory := manager.GetAIHelper(userName, sessionID)
+
+	// 每次请求按当前 modelType 与开关重建 runtime；历史只恢复消息，不恢复旧增强器配置。
+	runtimeConfig, err := ResolveChatRuntimeConfig(modelType, options)
+	if err != nil {
+		log.Println("getOrCreateExistingSessionHelper ResolveChatRuntimeConfig error:", err)
+		return nil, code.AIModelFail
+	}
+	factoryConfig, err := buildFactoryConfig(runtimeConfig)
+	if err != nil {
+		log.Println("getOrCreateExistingSessionHelper buildFactoryConfig error:", err)
+		return nil, code.AIModelFail
+	}
+	enhancers, err := buildMessageEnhancers(ctx, userName, runtimeConfig)
+	if err != nil {
+		log.Println("getOrCreateExistingSessionHelper buildMessageEnhancers error:", err)
+		return nil, code.AIModelFail
+	}
+	helper, err := manager.GetOrCreateAIHelper(userName, sessionID, factoryConfig, enhancers...)
+	if err != nil {
+		log.Println("getOrCreateExistingSessionHelper GetOrCreateAIHelper error:", err)
+		return nil, code.AIModelFail
+	}
+	if !alreadyInMemory {
+		// 只有新建 helper 时才恢复历史，避免覆盖当前进程中已追加但尚未持久化的消息。
+		if codeValue := restoreHelperMessages(userName, sessionID, helper); codeValue != code.CodeSuccess {
+			return nil, codeValue
+		}
+	}
+
+	return helper, code.CodeSuccess
+}
+
+func historyFromMessages(messages []*model.Message) []model.History {
+	history := make([]model.History, 0, len(messages))
+	for _, msg := range messages {
+		if msg == nil {
+			continue
+		}
+		history = append(history, model.History{
+			IsUser:  msg.IsUser,
+			Content: msg.Content,
+		})
+	}
+	return history
+}
+
+func historyFromStoredMessages(messages []model.Message) []model.History {
+	history := make([]model.History, 0, len(messages))
+	for i := range messages {
+		history = append(history, model.History{
+			IsUser:  messages[i].IsUser,
+			Content: messages[i].Content,
+		})
+	}
+	return history
+}
+
+// GetUserSessionsByUserName 从数据库返回指定用户的会话列表。
+func GetUserSessionsByUserName(userName string) ([]model.SessionInfo, error) {
+	sessions, err := sessionStore.listByUserName(userName)
+	if err != nil {
+		return nil, err
+	}
 
 	var sessionInfos []model.SessionInfo
 	for _, eachSession := range sessions {
+		title := eachSession.Title
+		if title == "" {
+			title = eachSession.ID
+		}
 		sessionInfos = append(sessionInfos, model.SessionInfo{
-			SessionID: eachSession,
-			Title:     eachSession,
+			SessionID: eachSession.ID,
+			Title:     title,
 		})
 	}
 
@@ -124,7 +248,7 @@ func CreateSessionAndSendMessage(userName string, userQuestion string, modelType
 		UserName: userName,
 		Title:    userQuestion,
 	}
-	createdSession, err := session.CreateSession(newSession)
+	createdSession, err := sessionStore.createSession(newSession)
 	if err != nil {
 		log.Println("CreateSessionAndSendMessage CreateSession error:", err)
 		return "", "", code.CodeServerBusy
@@ -168,7 +292,7 @@ func CreateStreamSessionOnly(userName string, userQuestion string) (string, code
 		UserName: userName,
 		Title:    userQuestion,
 	}
-	createdSession, err := session.CreateSession(newSession)
+	createdSession, err := sessionStore.createSession(newSession)
 	if err != nil {
 		log.Println("CreateStreamSessionOnly CreateSession error:", err)
 		return "", code.CodeServerBusy
@@ -184,26 +308,9 @@ func StreamMessageToExistingSession(userName string, sessionID string, userQuest
 		return code.CodeServerBusy
 	}
 
-	manager := aihelper.GetGlobalManager()
-	runtimeConfig, err := ResolveChatRuntimeConfig(modelType, options)
-	if err != nil {
-		log.Println("StreamMessageToExistingSession ResolveChatRuntimeConfig error:", err)
-		return code.AIModelFail
-	}
-	factoryConfig, err := buildFactoryConfig(runtimeConfig)
-	if err != nil {
-		log.Println("StreamMessageToExistingSession buildFactoryConfig error:", err)
-		return code.AIModelFail
-	}
-	enhancers, err := buildMessageEnhancers(ctx, userName, runtimeConfig)
-	if err != nil {
-		log.Println("StreamMessageToExistingSession buildMessageEnhancers error:", err)
-		return code.AIModelFail
-	}
-	helper, err := manager.GetOrCreateAIHelper(userName, sessionID, factoryConfig, enhancers...)
-	if err != nil {
-		log.Println("StreamMessageToExistingSession GetOrCreateAIHelper error:", err)
-		return code.AIModelFail
+	helper, codeValue := getOrCreateExistingSessionHelper(userName, sessionID, modelType, options)
+	if codeValue != code.CodeSuccess {
+		return codeValue
 	}
 
 	cb := func(msg string) {
@@ -217,7 +324,7 @@ func StreamMessageToExistingSession(userName string, sessionID string, userQuest
 		log.Println("[SSE] Flushed")
 	}
 
-	_, err = helper.StreamResponse(userName, ctx, cb, userQuestion)
+	_, err := helper.StreamResponse(userName, ctx, cb, userQuestion)
 	if err != nil {
 		log.Println("StreamMessageToExistingSession StreamResponse error:", err)
 		return code.AIModelFail
@@ -250,26 +357,9 @@ func CreateStreamSessionAndSendMessage(userName string, userQuestion string, mod
 
 // ChatSend 向已有会话发送非流式消息。
 func ChatSend(userName string, sessionID string, userQuestion string, modelType string, options ChatFeatureOptions) (string, code.Code) {
-	manager := aihelper.GetGlobalManager()
-	runtimeConfig, err := ResolveChatRuntimeConfig(modelType, options)
-	if err != nil {
-		log.Println("ChatSend ResolveChatRuntimeConfig error:", err)
-		return "", code.AIModelFail
-	}
-	factoryConfig, err := buildFactoryConfig(runtimeConfig)
-	if err != nil {
-		log.Println("ChatSend buildFactoryConfig error:", err)
-		return "", code.AIModelFail
-	}
-	enhancers, err := buildMessageEnhancers(ctx, userName, runtimeConfig)
-	if err != nil {
-		log.Println("ChatSend buildMessageEnhancers error:", err)
-		return "", code.AIModelFail
-	}
-	helper, err := manager.GetOrCreateAIHelper(userName, sessionID, factoryConfig, enhancers...)
-	if err != nil {
-		log.Println("ChatSend GetOrCreateAIHelper error:", err)
-		return "", code.AIModelFail
+	helper, codeValue := getOrCreateExistingSessionHelper(userName, sessionID, modelType, options)
+	if codeValue != code.CodeSuccess {
+		return "", codeValue
 	}
 
 	aiResponse, err := helper.GenerateResponse(userName, ctx, userQuestion)
@@ -281,26 +371,23 @@ func ChatSend(userName string, sessionID string, userQuestion string, modelType 
 	return aiResponse.Content, code.CodeSuccess
 }
 
-// GetChatHistory 返回单个会话的内存消息历史。
+// GetChatHistory 优先返回内存历史；内存没有时回退到数据库历史。
 func GetChatHistory(userName string, sessionID string) ([]model.History, code.Code) {
 	manager := aihelper.GetGlobalManager()
 	helper, exists := manager.GetAIHelper(userName, sessionID)
-	if !exists {
+	if exists {
+		return historyFromMessages(helper.GetMessages()), code.CodeSuccess
+	}
+
+	if sessionStore.messagesBySession == nil {
 		return nil, code.CodeServerBusy
 	}
-
-	messages := helper.GetMessages()
-	history := make([]model.History, 0, len(messages))
-
-	for i, msg := range messages {
-		isUser := i%2 == 0
-		history = append(history, model.History{
-			IsUser:  isUser,
-			Content: msg.Content,
-		})
+	messages, err := sessionStore.messagesBySession(userName, sessionID)
+	if err != nil {
+		log.Println("GetChatHistory messagesBySession error:", err)
+		return nil, code.CodeServerBusy
 	}
-
-	return history, code.CodeSuccess
+	return historyFromStoredMessages(messages), code.CodeSuccess
 }
 
 // ChatStreamSend 为已有会话流式返回消息响应。
