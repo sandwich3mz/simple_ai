@@ -3,6 +3,7 @@ package aihelper
 import (
 	"context"
 	"fmt"
+	"simple_ai/model"
 	"sort"
 	"strings"
 	"sync"
@@ -46,20 +47,37 @@ func (m *Manager) GetOrCreateAIHelper(userName, sessionID string, factoryConfig 
 	}
 
 	if helper, exists := userHelpers[sessionID]; exists {
-		helper.SetMessageEnhancers(enhancers...)
-		return helper, nil
+		if strings.EqualFold(helper.GetModelType(), string(factoryConfig.Provider)) {
+			helper.SetMessageEnhancers(enhancers...)
+			return helper, nil
+		}
+		messages := helper.GetMessages()
+		nextHelper, err := m.createAIHelper(userName, sessionID, factoryConfig, enhancers...)
+		if err != nil {
+			return nil, err
+		}
+		nextHelper.LoadMessages(messageSnapshotsToValues(messages))
+		userHelpers[sessionID] = nextHelper
+		return nextHelper, nil
 	}
 
+	helper, err := m.createAIHelper(userName, sessionID, factoryConfig, enhancers...)
+	if err != nil {
+		return nil, err
+	}
+	userHelpers[sessionID] = helper
+
+	return helper, nil
+}
+
+func (m *Manager) createAIHelper(userName, sessionID string, factoryConfig *AIModelFactoryConfig, enhancers ...MessageEnhancer) (*AIHelper, error) {
 	factoryConfig.UserName = userName
 	aiModel, err := GetGlobalAIModelFactory().Create(context.Background(), factoryConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	helper := NewAIHelper(aiModel, sessionID, WithMessageEnhancers(enhancers...))
-	userHelpers[sessionID] = helper
-
-	return helper, nil
+	return NewAIHelper(aiModel, sessionID, WithMessageEnhancers(enhancers...)), nil
 }
 
 // GetAIHelper 在会话仍驻留内存时返回对应助手。
@@ -182,6 +200,17 @@ func normalizeProvider(modelType string) (AIModelProvider, error) {
 	default:
 		return "", fmt.Errorf("unsupported model provider: %s", modelType)
 	}
+}
+
+func messageSnapshotsToValues(messages []*model.Message) []model.Message {
+	values := make([]model.Message, 0, len(messages))
+	for _, msg := range messages {
+		if msg == nil {
+			continue
+		}
+		values = append(values, *msg)
+	}
+	return values
 }
 
 func getString(config map[string]interface{}, key string) string {

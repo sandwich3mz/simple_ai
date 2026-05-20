@@ -124,6 +124,20 @@ func buildMessageEnhancers(ctx context.Context, userName string, runtime ChatRun
 	return enhancers, nil
 }
 
+func formatSSEData(data string) string {
+	normalized := strings.ReplaceAll(data, "\r\n", "\n")
+	normalized = strings.ReplaceAll(normalized, "\r", "\n")
+
+	var builder strings.Builder
+	for _, line := range strings.Split(normalized, "\n") {
+		builder.WriteString("data: ")
+		builder.WriteString(line)
+		builder.WriteString("\n")
+	}
+	builder.WriteString("\n")
+	return builder.String()
+}
+
 func ensureSessionBelongsToUser(userName string, sessionID string) code.Code {
 	if sessionStore.sessionBelongsToUser == nil {
 		return code.CodeServerBusy
@@ -315,7 +329,7 @@ func StreamMessageToExistingSession(userName string, sessionID string, userQuest
 
 	cb := func(msg string) {
 		log.Printf("[SSE] Sending chunk: %s (len=%d)\n", msg, len(msg))
-		_, writeErr := writer.Write([]byte("data: " + msg + "\n\n"))
+		_, writeErr := writer.Write([]byte(formatSSEData(msg)))
 		if writeErr != nil {
 			log.Println("[SSE] Write error:", writeErr)
 			return

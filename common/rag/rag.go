@@ -233,10 +233,19 @@ func NewRAGQuery(ctx context.Context, username string) (*RAGQuery, error) {
 	}
 
 	var filename string
+	var newestModTime int64
 	for _, f := range files {
-		if !f.IsDir() {
+		if f.IsDir() || strings.HasPrefix(f.Name(), ".") {
+			continue
+		}
+		info, infoErr := f.Info()
+		if infoErr != nil {
+			continue
+		}
+		modTime := info.ModTime().UnixNano()
+		if filename == "" || modTime > newestModTime {
 			filename = f.Name()
-			break
+			newestModTime = modTime
 		}
 	}
 

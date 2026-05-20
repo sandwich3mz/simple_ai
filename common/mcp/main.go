@@ -18,7 +18,7 @@ func main() {
 	httpAddr := flag.String("http-addr", ":8081", "HTTP服务器地址")
 	city := flag.String("city", "", "要查询天气的城市名称")
 	flag.Parse()
-  
+
 	if *mode == "" {
 		fmt.Println("Error: 您必须指定模式使用--mode (server 或 client)")
 		flag.Usage()

@@ -6,9 +6,12 @@ import (
 	"simple_ai/common/code"
 	"simple_ai/controller"
 	"simple_ai/service/file"
+	"simple_ai/utils"
 
 	"github.com/gin-gonic/gin"
 )
+
+var uploadRagFileService = file.UploadRagFile
 
 type (
 	UploadFileResponse struct {
@@ -19,6 +22,8 @@ type (
 
 func UploadRagFile(c *gin.Context) {
 	res := new(UploadFileResponse)
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, utils.MaxUploadRequestSize)
+
 	uploadedFile, err := c.FormFile("file")
 	if err != nil {
 		log.Println("FormFile fail ", err)
@@ -34,7 +39,7 @@ func UploadRagFile(c *gin.Context) {
 	}
 
 	//indexer 会在 service 层根据实际文件名创建
-	filePath, err := file.UploadRagFile(username, uploadedFile)
+	filePath, err := uploadRagFileService(username, uploadedFile)
 	if err != nil {
 		log.Println("UploadFile fail ", err)
 		c.JSON(http.StatusOK, res.CodeOf(code.CodeServerBusy))

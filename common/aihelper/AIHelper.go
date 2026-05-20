@@ -81,6 +81,7 @@ func (a *AIHelper) AddMessage(content string, userName string, isUser bool, save
 		UserName:  userName,
 		IsUser:    isUser,
 	}
+
 	a.mutex.Lock()
 	a.messages = append(a.messages, &userMsg)
 	saveFunc := a.saveFunc

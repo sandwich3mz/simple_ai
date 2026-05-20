@@ -20,6 +20,9 @@ import (
 // MaxUploadFileSize 限制 RAG 知识库上传文件大小
 const MaxUploadFileSize int64 = 5 * 1024 * 1024
 
+// MaxUploadRequestSize limits the full multipart request while leaving room for form overhead.
+const MaxUploadRequestSize int64 = MaxUploadFileSize + 1*1024*1024
+
 func GetRandomNumbers(num int) string {
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 

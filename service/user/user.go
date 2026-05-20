@@ -4,17 +4,26 @@ import (
 	"simple_ai/common/code"
 	myemail "simple_ai/common/email"
 	myredis "simple_ai/common/redis"
-	"simple_ai/dao/user"
+	userDAO "simple_ai/dao/user"
 	"simple_ai/model"
 	"simple_ai/utils"
 	"simple_ai/utils/myjwt"
+)
+
+var (
+	isExistUser          = userDAO.IsExistUser
+	registerUser         = userDAO.Register
+	deleteRegisteredUser = userDAO.DeleteUserByID
+	checkCaptchaForEmail = myredis.CheckCaptchaForEmail
+	setCaptchaForEmail   = myredis.SetCaptchaForEmail
+	sendCaptchaEmail     = myemail.SendCaptcha
 )
 
 func Login(username, password string) (string, code.Code) {
 	var userInformation *model.User
 	var ok bool
 	//1:判断用户是否存在
-	if ok, userInformation = user.IsExistUser(username); !ok {
+	if ok, userInformation = isExistUser(username); !ok {
 
 		return "", code.CodeUserNotExist
 	}
@@ -37,12 +46,12 @@ func Register(email, password, captcha string) (string, code.Code) {
 	var userInformation *model.User
 
 	//1:先判断用户是否已经存在了
-	if ok, _ := user.IsExistUser(email); ok {
+	if ok, _ := isExistUser(email); ok {
 		return "", code.CodeUserExist
 	}
 
 	//2:从redis中验证验证码是否有效
-	if ok, _ := myredis.CheckCaptchaForEmail(email, captcha); !ok {
+	if ok, _ := checkCaptchaForEmail(email, captcha); !ok {
 		return "", code.CodeInvalidCaptcha
 	}
 
@@ -50,12 +59,15 @@ func Register(email, password, captcha string) (string, code.Code) {
 	username := utils.GetRandomNumbers(11)
 
 	//4：注册到数据库中
-	if userInformation, ok = user.Register(username, email, password); !ok {
+	if userInformation, ok = registerUser(username, email, password); !ok {
 		return "", code.CodeServerBusy
 	}
 
 	//5：将账号一并发送到对应邮箱上去，后续需要账号登录
-	if err := myemail.SendCaptcha(email, username, user.UserNameMsg); err != nil {
+	if err := sendCaptchaEmail(email, username, userDAO.UserNameMsg); err != nil {
+		if userInformation != nil {
+			_ = deleteRegisteredUser(userInformation.ID)
+		}
 		return "", code.CodeServerBusy
 	}
 
@@ -76,12 +88,12 @@ func Register(email, password, captcha string) (string, code.Code) {
 func SendCaptcha(email_ string) code.Code {
 	sendCode := utils.GetRandomNumbers(6)
 	//1:先存放到redis
-	if err := myredis.SetCaptchaForEmail(email_, sendCode); err != nil {
+	if err := setCaptchaForEmail(email_, sendCode); err != nil {
 		return code.CodeServerBusy
 	}
 
 	//2:再进行远程发送
-	if err := myemail.SendCaptcha(email_, sendCode, myemail.CodeMsg); err != nil {
+	if err := sendCaptchaEmail(email_, sendCode, myemail.CodeMsg); err != nil {
 		return code.CodeServerBusy
 	}
 

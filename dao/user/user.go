@@ -5,8 +5,8 @@ import (
 	"errors"
 	"simple_ai/common/mysql"
 	"simple_ai/model"
-	"strings"
 	"simple_ai/utils"
+	"strings"
 
 	"gorm.io/gorm"
 )
@@ -45,4 +45,8 @@ func Register(username, email, password string) (*model.User, bool) {
 	} else {
 		return user, true
 	}
+}
+
+func DeleteUserByID(id int64) error {
+	return mysql.DB.Unscoped().Delete(&model.User{}, id).Error
 }

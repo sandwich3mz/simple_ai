@@ -2,7 +2,6 @@ const MODEL_LABELS = {
   qwen: 'Qwen',
   deepseek: 'DeepSeek',
 }
-
 export function modelLabel(modelType) {
   return MODEL_LABELS[modelType] || modelType || 'LLM'
 }
@@ -16,4 +15,3 @@ export function resolveBaseModelSwitch({ currentSessionId, messageCount, nextMod
       : `已切换到底座模型 ${modelLabel(nextModelType)}。`,
   }
 }
-

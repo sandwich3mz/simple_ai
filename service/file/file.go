@@ -12,6 +12,20 @@ import (
 	"simple_ai/utils"
 )
 
+type ragFileIndexer interface {
+	IndexFile(ctx context.Context, filePath string) error
+}
+
+var (
+	newRAGIndexer = func(filename, embeddingModel string) (ragFileIndexer, error) {
+		return rag.NewRAGIndexer(filename, embeddingModel)
+	}
+	deleteRAGIndex       = rag.DeleteIndex
+	getRAGEmbeddingModel = func() string {
+		return config.GetConfig().RagModelConfig.RagEmbeddingModel
+	}
+)
+
 func UploadRagFile(username string, file *multipart.FileHeader) (string, error) {
 	// 校验文件类型和文件名
 	if err := utils.ValidateFile(file); err != nil {
@@ -26,23 +40,9 @@ func UploadRagFile(username string, file *multipart.FileHeader) (string, error) 
 		return "", err
 	}
 
-	// 删除用户目录中的所有现有文件及其索引（每个用户只能有一个文件）
-	files, err := os.ReadDir(userDir)
-	if err == nil {
-		for _, f := range files {
-			if !f.IsDir() {
-				filename := f.Name()
-				// 删除该文件对应的 Redis 索引
-				if err := rag.DeleteIndex(context.Background(), filename); err != nil {
-					log.Printf("Failed to delete index for %s: %v", filename, err)
-					// 继续执行，不因为索引删除失败而中断文件上传
-				}
-			}
-		}
-	}
-	// 删除用户目录中的所有文件
-	if err := utils.RemoveAllFilesInDir(userDir); err != nil {
-		log.Printf("Failed to clean user directory %s: %v", userDir, err)
+	oldFiles, err := listKnowledgeFiles(userDir)
+	if err != nil {
+		log.Printf("Failed to list user directory %s: %v", userDir, err)
 		return "", err
 	}
 
@@ -52,6 +52,7 @@ func UploadRagFile(username string, file *multipart.FileHeader) (string, error) 
 	ext := filepath.Ext(file.Filename)
 	filename := uuid + ext
 	filePath := filepath.Join(userDir, filename)
+	tempFilePath := filepath.Join(userDir, "."+filename+".tmp")
 
 	// 打开上传的文件
 	src, err := file.Open()
@@ -62,38 +63,80 @@ func UploadRagFile(username string, file *multipart.FileHeader) (string, error) 
 	defer src.Close()
 
 	// 创建目标文件
-	dst, err := os.Create(filePath)
+	dst, err := os.Create(tempFilePath)
 	if err != nil {
-		log.Printf("Failed to create destination file %s: %v", filePath, err)
+		log.Printf("Failed to create temporary file %s: %v", tempFilePath, err)
 		return "", err
 	}
-	defer dst.Close()
 
 	if _, err := io.Copy(dst, src); err != nil {
+		_ = dst.Close()
 		log.Printf("Failed to copy file content: %v", err)
+		os.Remove(tempFilePath)
+		return "", err
+	}
+	if err := dst.Close(); err != nil {
+		log.Printf("Failed to close temporary file %s: %v", tempFilePath, err)
+		os.Remove(tempFilePath)
 		return "", err
 	}
 
-	log.Printf("File uploaded successfully: %s", filePath)
+	log.Printf("File uploaded successfully: %s", tempFilePath)
 
 	// 创建 RAG 索引器并对文件进行向量化
-	indexer, err := rag.NewRAGIndexer(filename, config.GetConfig().RagModelConfig.RagEmbeddingModel)
+	indexer, err := newRAGIndexer(filename, getRAGEmbeddingModel())
 	if err != nil {
 		log.Printf("Failed to create RAG indexer: %v", err)
-		// 删除已上传的文件
-		os.Remove(filePath)
+		os.Remove(tempFilePath)
 		return "", err
 	}
 
 	// 读取文件内容并创建向量索引
-	if err := indexer.IndexFile(context.Background(), filePath); err != nil {
+	if err := indexer.IndexFile(context.Background(), tempFilePath); err != nil {
 		log.Printf("Failed to index file: %v", err)
-		// 删除已上传的文件和索引
-		os.Remove(filePath)
-		rag.DeleteIndex(context.Background(), filename)
+		os.Remove(tempFilePath)
+		deleteRAGIndex(context.Background(), filename)
 		return "", err
+	}
+
+	if err := os.Rename(tempFilePath, filePath); err != nil {
+		log.Printf("Failed to publish indexed file %s: %v", filePath, err)
+		os.Remove(tempFilePath)
+		deleteRAGIndex(context.Background(), filename)
+		return "", err
+	}
+
+	for _, oldFile := range oldFiles {
+		oldPath := filepath.Join(userDir, oldFile)
+		if err := os.Remove(oldPath); err != nil && !os.IsNotExist(err) {
+			log.Printf("Failed to delete old file %s: %v", oldPath, err)
+			return "", err
+		}
+		if err := deleteRAGIndex(context.Background(), oldFile); err != nil {
+			log.Printf("Failed to delete index for %s: %v", oldFile, err)
+			return "", err
+		}
 	}
 
 	log.Printf("File indexed successfully: %s", filename)
 	return filePath, nil
+}
+
+func listKnowledgeFiles(userDir string) ([]string, error) {
+	files, err := os.ReadDir(userDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	names := make([]string, 0, len(files))
+	for _, f := range files {
+		if f.IsDir() || len(f.Name()) == 0 || f.Name()[0] == '.' {
+			continue
+		}
+		names = append(names, f.Name())
+	}
+	return names, nil
 }

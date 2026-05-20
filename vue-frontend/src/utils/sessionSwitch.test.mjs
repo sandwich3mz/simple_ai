@@ -13,4 +13,3 @@ test('switching base model with an active session starts a new session and shows
   assert.equal(result.shouldStartNewSession, true)
   assert.equal(result.alertText, '已切换到底座模型 DeepSeek，下一条消息将自动创建新会话。')
 })
-
